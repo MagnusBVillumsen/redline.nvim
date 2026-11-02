@@ -153,8 +153,11 @@ require('redline').setup {
 ### Placeholders
 
 Prompts and `:Redline send` text expand `{selection}`, `{line}`, `{file}`,
-`{position}`, `{this}`, `{diagnostics}`, `{diagnostics_all}`, `{buffers}` and
-`{quickfix}`. Unknown names stay as they are. `{selection}` and `{line}` give
+`{position}`, `{this}`, `{f}` (or `{function}`), `{c}` (or `{class}`),
+`{diagnostics}`, `{diagnostics_all}`, `{buffers}` and `{quickfix}`. Unknown
+names stay as they are. `{f}` and `{c}` are the innermost function and
+class/struct/impl around the cursor, found with treesitter, in the same format
+as `{selection}`. `{selection}` and `{line}` give
 the repo-relative path and lines followed by a fenced block:
 
 ````
@@ -317,8 +320,8 @@ spec is enough for most setups:
 | `nes` (Copilot next edit)                            | not provided                             |
 
 Differences: `<leader>av` adds the file path and line range and a fenced
-block instead of the raw selection; `{function}` and `{class}` placeholders
-are not implemented; there is no tmux/zellij backend.
+block instead of the raw selection; `{function}` and `{class}` also have the
+short forms `{f}` and `{c}`; there is no tmux/zellij backend.
 
 ## Development
 

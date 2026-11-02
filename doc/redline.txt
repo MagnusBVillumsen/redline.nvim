@@ -155,8 +155,10 @@ leading space, since Herdr's CLI would read it as an option.
 
                                                         *redline-placeholders*
 Prompts expand `{selection}`, `{line}`, `{file}`, `{position}`, `{this}`,
-`{diagnostics}`, `{diagnostics_all}`, `{buffers}` and `{quickfix}`. Unknown
-names are left as they are. `{selection}` and `{line}` give: >
+`{f}` (or `{function}`), `{c}` (or `{class}`), `{diagnostics}`,
+`{diagnostics_all}`, `{buffers}` and `{quickfix}`. Unknown names are left as
+they are. `{f}` and `{c}` are the innermost function and class/struct/impl
+around the cursor, found with treesitter. `{selection}` and `{line}` give: >
     lua/foo.lua:12-20:
     ```lua
     …

@@ -87,8 +87,76 @@ function M.diagnostics(ctx, all)
   return #out > 0 and table.concat(out, '\n') or '(no diagnostics)'
 end
 
+-- Node types are grammar-specific; matching on words covers most languages
+-- (function_definition, method_declaration, arrow_function, closure_expression,
+-- class_definition, struct_specifier, impl_item, …) without per-language lists.
+local kinds = {
+  ['function'] = { 'function', 'method', 'lambda', 'closure', 'constructor' },
+  class = { 'class', 'struct', 'interface', 'trait', 'impl_item', 'enum', 'module', 'object_declaration' },
+}
+local skip = { 'call', 'name', 'body', 'parameter', 'argument', 'field', 'type_identifier', 'list', 'modifier', 'signature' }
+
+---@param t string
+---@param kind 'function'|'class'
+---@return boolean
+local function is(t, kind)
+  for _, w in ipairs(skip) do
+    if t:find(w, 1, true) then
+      return false
+    end
+  end
+  for _, w in ipairs(kinds[kind]) do
+    if t:find(w, 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+--- The innermost function or class around the cursor, via treesitter.
+---@param ctx redline.Context
+---@param kind 'function'|'class'
+---@return string
+function M.enclosing(ctx, kind)
+  local parser = vim.treesitter.get_parser(ctx.buf, nil, { error = false })
+  if not parser then
+    return string.format('(no treesitter parser for %s)', ctx.path)
+  end
+  -- get_node only sees parsed trees, and highlighting may not have parsed yet.
+  parser:parse { ctx.row - 1, ctx.row }
+  local node = vim.treesitter.get_node { bufnr = ctx.buf, pos = { ctx.row - 1, ctx.col - 1 }, ignore_injections = false }
+  while node and not is(node:type(), kind) do
+    node = node:parent()
+  end
+  if not node then
+    return string.format('(no %s at %s:%d)', kind, ctx.path, ctx.row)
+  end
+  local r1, _, r2, c2 = node:range()
+  if c2 == 0 and r2 > r1 then
+    r2 = r2 - 1
+  end
+  local text = table.concat(vim.api.nvim_buf_get_lines(ctx.buf, r1, r2 + 1, false), '\n')
+  return M.format(ctx.path, r1 + 1, r2 + 1, text, ctx.ft)
+end
+
+---@param ctx redline.Context
+---@return string
+local function fn(ctx)
+  return M.enclosing(ctx, 'function')
+end
+
+---@param ctx redline.Context
+---@return string
+local function class(ctx)
+  return M.enclosing(ctx, 'class')
+end
+
 ---@type table<string, fun(ctx: redline.Context): string>
 M.vars = {
+  f = fn,
+  ['function'] = fn,
+  c = class,
+  class = class,
   selection = M.selection,
   line = M.line,
   file = function(ctx)

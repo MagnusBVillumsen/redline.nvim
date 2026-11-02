@@ -57,4 +57,26 @@ describe('selection metadata', function()
       context.render(config.options.agent.prompts.explain, ctx)
     )
   end)
+
+  it('expands {f} and {c} to the enclosing function and class', function()
+    local dir = h.repo {
+      ['m.lua'] = 'local x = 1\nlocal function add(a, b)\n  return a + b\nend\n',
+      ['p.c'] = 'struct point {\n  int x;\n  int y;\n};\n',
+    }
+    h.open(dir, 'm.lua')
+    vim.treesitter.start()
+    vim.api.nvim_win_set_cursor(0, { 3, 4 })
+    local ctx = context.get()
+    local want = 'm.lua:2-4:\n```lua\nlocal function add(a, b)\n  return a + b\nend\n```'
+    eq(want, context.render('{f}', ctx))
+    eq(want, context.render('{function}', ctx))
+    eq('(no class at m.lua:3)', context.render('{c}', ctx))
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    eq('(no function at m.lua:1)', context.render('{f}', context.get()))
+
+    h.open(dir, 'p.c')
+    vim.treesitter.start()
+    vim.api.nvim_win_set_cursor(0, { 2, 6 })
+    eq('p.c:1-4:\n```c\nstruct point {\n  int x;\n  int y;\n};\n```', context.render('{class}', context.get()))
+  end)
 end)
