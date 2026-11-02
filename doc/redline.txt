@@ -1,0 +1,260 @@
+*redline.txt*  Agent sessions, review comments, snapshots and inline diffs
+
+==============================================================================
+CONTENTS                                                    *redline-contents*
+
+  1. Introduction ............................... |redline-intro|
+  2. Setup ...................................... |redline-setup|
+  3. Keymaps .................................... |redline-keymaps|
+  4. Commands ................................... |:Redline|
+  5. Agents ..................................... |redline-agents|
+  6. Review comments ............................ |redline-review|
+  7. Snapshots .................................. |redline-snapshots|
+  8. Inline diff ................................ |redline-diff|
+  9. Pull requests .............................. |redline-pr|
+ 10. Auto-reload ................................ |redline-watch|
+ 11. Highlights ................................. |redline-highlights|
+ 12. Lua API .................................... |redline-api|
+
+==============================================================================
+1. INTRODUCTION                                                *redline-intro*
+
+redline runs or attaches to coding agents, sends them code with its location,
+collects review comments and sends them as one prompt, stores snapshots of the
+working tree, and shows changes as an inline diff in the same buffer: removed
+lines as red virtual lines above the green new lines.
+
+Requires Neovim 0.11 or newer and git.
+
+==============================================================================
+2. SETUP                                                       *redline-setup*
+
+>lua
+    require('redline').setup {}
+<
+With lazy.nvim: >lua
+    { 'MagnusBVillumsen/redline.nvim', event = 'VeryLazy', opts = {} }
+<
+Options and defaults:
+
+  agent.tools          `{ claude = { cmd = { 'claude' } }, codex = …, pi = … }`
+                       Replaces the default table.
+  agent.default        `'claude'`
+  agent.win            `{ position = 'right', size = 0.4 }`
+                       position: right, left, bottom, top. A size below 1 is
+                       a fraction of the editor.
+  agent.herdr          `{ enabled = true, bin = nil, bracketed = true }`
+                       bin overrides `$HERDR_BIN_PATH` and `herdr`.
+  agent.focus          `true` Focus the agent after sending.
+  agent.submit_delay   `120` ms between paste and Enter in nvim terminals.
+  agent.prompts        `explain`, `line`, `error`. See |redline-placeholders|.
+  snapshot.keep        `20`
+  diff.interval        `2000` ms; |:checktime| and file list refresh while the
+                       diff is on. 0 disables polling.
+  diff.debounce        `150` ms
+  diff.autoread        `true` Sets 'autoread' locally on diffed buffers.
+  diff.word            `true` Word-level highlights.
+  diff.syntax          `true` Treesitter highlights in removed lines.
+  diff.signs           `true`
+  diff.max_bytes       `1048576` Larger files are listed but not diffed.
+  watch.enabled        `true` Reload buffers changed on disk, see
+                       |redline-watch|.
+  watch.debounce       `100` ms
+  watch.max            `256` Most directories watched at once.
+  watch.poll           `3000` ms timer for buffers without a watcher.
+  review.submit        `true` Submit the review prompt.
+  review.header        `'I reviewed the code and left {count} comment(s). …'`
+  review.sign          `'▍'`
+  pr.remote            `'origin'`
+  pr.backend           `nil` (auto), `'gh'` or `'forge'`
+  pr.gh, pr.forge      Executables, `'gh'` and `'forge'`.
+  keys                 Table of name to lhs, see |redline-keymaps|. Set a
+                       name to `false` to skip it, or `keys = false`.
+  state_dir            `stdpath('state') .. '/redline'`
+
+==============================================================================
+3. KEYMAPS                                                   *redline-keymaps*
+
+  Name          Default       Mode     Action ~
+  toggle        <leader>aa    n        Toggle agent window or pick one
+  select        <leader>as    n        Pick an agent
+  codex         <leader>ac    n        Toggle Codex
+  claude        <leader>aC    n        Toggle Claude
+  send          <leader>av    x        Send selection with metadata
+  prompt        <leader>ap    n x      Prompt picker
+  focus         <C-.>         n t i x  Jump to the agent and back
+  comment       <leader>rc    n x      Add a review comment
+  edit          <leader>re    n        Edit comment under cursor
+  delete        <leader>rd    n        Delete comment under cursor
+  list          <leader>rl    n        Comments in quickfix
+  review_send   <leader>rs    n        Snapshot and send all comments
+  review_check  <leader>rk    n        Diff vs review snapshot
+  snapshot      <leader>rS    n        Take a snapshot
+  diff          <leader>rv    n        Toggle inline diff vs HEAD
+  diff_pick     <leader>rV    n        Inline diff against …
+  files         <leader>rf    n        Changed files picker
+  pr            <leader>rp    n        Review a pull request
+  pr_submit     <leader>rP    n        Submit the PR review
+  next_hunk     ]h            n        Next hunk across files
+  prev_hunk     [h            n        Previous hunk across files
+
+Comment editor: <C-s>, |:w| or <CR> in Normal mode saves; q or <Esc> cancels.
+
+==============================================================================
+4. COMMANDS                                                         *:Redline*
+
+:Redline toggle [tool]       Toggle the agent window, or a tool's.
+:Redline select              Pick an agent.
+:Redline focus               Jump to the agent and back.
+:[range]Redline send [text]  Send text, or the range or current line with
+                             path and line range. Not submitted.
+:Redline prompt [name]       Send a configured prompt.
+:[range]Redline comment [text]
+                             Add a comment. Without text the editor opens.
+:Redline edit                Edit the comment under the cursor.
+:Redline delete              Delete the comment under the cursor.
+:Redline comments            All comments in the quickfix list.
+:Redline pick                Picker over pending comments.
+:Redline review              Snapshot, then send all pending comments.
+:Redline check               Diff vs the latest review snapshot.
+:Redline clear [all]         Remove sent comments, or all.
+:Redline snapshot [label]    Take a snapshot.
+:Redline snapshots           Pick a snapshot and diff against it.
+:Redline diff [rev]          Toggle the diff vs HEAD, or diff vs {rev}.
+:Redline base                Pick HEAD, a merge-base or a snapshot.
+:Redline off                 Turn the inline diff off.
+:Redline files               Picker over changed files.
+:Redline qf                  Hunks of all changed files in quickfix.
+:Redline next / prev         Next or previous hunk across files.
+:Redline pr [number]         Review a pull request.
+:Redline submit [event] [body]
+                             Submit: comment, approve or request_changes.
+:Redline close               End the PR review.
+:Redline reload[!]           Reload the buffer from disk. With ! (also
+                             `:Redline! reload`) unsaved changes are dropped.
+:Redline diskdiff            Toggle an inline diff of the buffer vs the file
+                             on disk.
+
+==============================================================================
+5. AGENTS                                                     *redline-agents*
+
+An agent is either a terminal split running one of `agent.tools`, or an agent
+in a Herdr pane, found with `herdr agent list`. Panes whose cwd is inside the
+current repository are listed first. The Herdr binary is `agent.herdr.bin`,
+else `$HERDR_BIN_PATH`, else `herdr`.
+
+Sending without submitting wraps the text in bracketed paste markers, so
+newlines do not submit. For Herdr panes this goes through
+`herdr pane send-text`, which in Herdr 0.9.5 writes the bytes unchanged
+without bracketed paste of its own; redline adds the markers. With
+`agent.herdr.bracketed = false` the text is sent on one line instead.
+
+Submitting uses `herdr agent prompt` for Herdr panes, and paste plus Enter
+after `agent.submit_delay` for terminals. Text starting with `-` gets a
+leading space, since Herdr's CLI would read it as an option.
+
+                                                        *redline-placeholders*
+Prompts expand `{selection}`, `{line}`, `{file}`, `{position}`, `{this}`,
+`{diagnostics}`, `{diagnostics_all}`, `{buffers}` and `{quickfix}`. Unknown
+names are left as they are. `{selection}` and `{line}` give: >
+    lua/foo.lua:12-20:
+    ```lua
+    …
+    ```
+<
+==============================================================================
+6. REVIEW COMMENTS                                            *redline-review*
+
+Comments sit on a line or range and show as virtual lines below it. They are
+stored per repository root in `state_dir/comments/` and follow edits.
+
+`:Redline review` takes a snapshot, then sends all pending comments as one
+prompt: a header, then per comment `## n. path:lines`, the current code in a
+fenced block and the comment. The comments are then marked sent and linked to
+the snapshot.
+
+`:Redline check` diffs against that snapshot and shows each comment at its
+mapped location, marked touched when a hunk overlaps or directly borders it,
+untouched otherwise. The list also goes to quickfix.
+
+While a PR review is active, new comments belong to that PR.
+
+==============================================================================
+7. SNAPSHOTS                                               *redline-snapshots*
+
+A snapshot is a commit of the working tree including untracked, non-ignored
+files, built with a copy of the index in `GIT_INDEX_FILE`: `git add -A`,
+`write-tree`, `commit-tree` with HEAD as parent and the label as message. It
+is stored at `refs/redline/snapshots/<worktree>/<n>`, where `<worktree>` is
+`main` or the linked worktree's name. Only the newest `snapshot.keep` remain.
+The index, HEAD, branches and stash are never changed.
+
+==============================================================================
+8. INLINE DIFF                                                  *redline-diff*
+
+The base of each file comes from `git cat-file blob` and is diffed against the
+buffer with |vim.text.diff()|. New and changed lines get `RedlineAdd`, removed
+lines are virtual lines with `RedlineDelete` and treesitter highlighting,
+changed words get `RedlineAddText` and `RedlineDeleteText`.
+
+Changed files are found with `git diff-tree` between the base and a tree of
+the working tree, so untracked files count. While on, redline runs
+|:checktime| every `diff.interval` ms and redraws after edits. The quickfix
+list titled "redline diff" is kept up to date; `]h` and `[h` move across
+files.
+
+==============================================================================
+9. PULL REQUESTS                                                  *redline-pr*
+
+The backend follows the remote: `github.com` uses `gh`, anything else
+`forge`. `:Redline pr` lists open PRs. When HEAD is not the PR head, the PR is
+checked out; with uncommitted changes redline refuses and suggests a
+worktree. The diff runs against the merge-base with the base branch, and
+existing review comments are shown read-only. `:Redline submit` sends the
+PR's comments as one review on the head commit: `gh api` POST to
+`pulls/N/reviews`, or `forge pr review N submit` with `--comments-file`.
+
+==============================================================================
+10. AUTO-RELOAD                                                *redline-watch*
+
+redline watches the parent directory of each loaded, listed file buffer with
+fs events, so writes by other processes are noticed without focus events; a
+directory watch also survives writes that rename a temp file over the
+original. After a short debounce the file's mtime, size and inode are compared
+with what the buffer last read.
+
+Unmodified buffers are reloaded silently and windows keep their view.
+Buffers with unsaved changes are never reloaded: you get one warning per
+change on disk, and can use `:Redline reload!` or `:Redline diskdiff`.
+
+Watchers go away with their buffers. Past `watch.max` directories, or when a
+watcher fails, buffers are checked every `watch.poll` ms instead. The inline
+diff refreshes from the same events.
+
+==============================================================================
+11. HIGHLIGHTS                                            *redline-highlights*
+
+RedlineAdd, RedlineAddText, RedlineAddSign, RedlineDelete, RedlineDeleteText,
+RedlineDeleteSign, RedlineComment, RedlineCommentSign, RedlinePrComment,
+RedlineTouched, RedlineUntouched. All use `default = true`.
+
+==============================================================================
+12. LUA API                                                      *redline-api*
+
+  require('redline.agent').toggle({ name?, focus? })
+  require('redline.agent').select()
+  require('redline.agent').focus()
+  require('redline.agent').send(text, { submit?, focus? })
+  require('redline.agent').send_selection()
+  require('redline.agent').prompt(name?)
+  require('redline.review').add({ l1?, l2?, text? })
+  require('redline.review').send()
+  require('redline.review').check()
+  require('redline.snapshot').create(root, label)
+  require('redline.inline').enable({ rev, label? })
+  require('redline.inline').toggle(rev?)
+  require('redline.inline').nav(1 | -1)
+  require('redline.pr').open(number?)
+  require('redline.pr').submit({ event?, body? })
+
+ vim:tw=78:ts=8:ft=help:norl:

@@ -1,0 +1,32 @@
+#!/bin/sh
+# Fake CLI for tests: records argv and replies with canned output.
+# Reply files live in $REDLINE_FAKE_DIR/reply/<name>.*: line 1 is a shell
+# glob matched against the joined args, line 2 the exit code, the rest stdout.
+name=$(basename "$0")
+dir=${REDLINE_FAKE_DIR:?REDLINE_FAKE_DIR is not set}
+mkdir -p "$dir/log"
+id=$(date +%s%N)-$$
+printf '%s\0' "$name" "$@" > "$dir/log/$id"
+prev=
+for a in "$@"; do
+  case "$prev" in
+    --input|--comments-file|--body-file) cp "$a" "$dir/log/$id.${prev#--}" ;;
+  esac
+  prev=$a
+done
+if [ "$1 $2" = "pr checkout" ] && [ -n "$REDLINE_FAKE_CHECKOUT" ]; then
+  git checkout -q "$REDLINE_FAKE_CHECKOUT" || exit 1
+fi
+key="$*"
+for f in "$dir"/reply/"$name".*; do
+  [ -f "$f" ] || continue
+  pat=$(sed -n 1p "$f")
+  # shellcheck disable=SC2254
+  case "$key" in
+    $pat)
+      sed -n '3,$p' "$f"
+      exit "$(sed -n 2p "$f")"
+      ;;
+  esac
+done
+exit 0
